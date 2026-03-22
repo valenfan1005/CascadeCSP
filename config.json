@@ -1,0 +1,50 @@
+{
+  "entry_rules": {
+    "min_iv_rank": 30,
+    "ideal_iv_rank": 50,
+    "delta_range": [-0.25, -0.15],
+    "dte_range": [30, 45],
+    "target_dte": 35,
+    "max_position_size_pct_csp": 10.0,
+    "max_position_size_pct_spread": 5.0,
+    "max_positions_per_sector": 2,
+    "max_sector_exposure_pct": 20.0,
+    "max_total_positions": 12
+  },
+  "exit_rules": {
+    "profit_target_pct": 50,
+    "stop_loss_multiplier": 2.0,
+    "time_exit_dte": 21,
+    "close_if_strike_breached": true
+  },
+  "regime_rules": {
+    "vix_tiers": [
+      {"label": "EXTREME_GREED",  "vix_max": 12, "max_deployment_pct": 55, "max_positions": 6,  "delta_range": [-0.20, -0.12], "use_spreads": false},
+      {"label": "GREED",          "vix_max": 15, "max_deployment_pct": 65, "max_positions": 8,  "delta_range": [-0.22, -0.15], "use_spreads": false},
+      {"label": "SLIGHT_FEAR",    "vix_max": 20, "max_deployment_pct": 78, "max_positions": 10, "delta_range": [-0.25, -0.15], "use_spreads": false},
+      {"label": "FEAR",           "vix_max": 25, "max_deployment_pct": 88, "max_positions": 12, "delta_range": [-0.25, -0.18], "use_spreads": false},
+      {"label": "VERY_FEARFUL",   "vix_max": 30, "max_deployment_pct": 93, "max_positions": 14, "delta_range": [-0.20, -0.12], "use_spreads": true},
+      {"label": "EXTREME_FEAR",   "vix_max": 999,"max_deployment_pct": 98, "max_positions": 16, "delta_range": [-0.15, -0.10], "use_spreads": true}
+    ]
+  },
+  "moomoo": {
+    "host": "127.0.0.1",
+    "port": 11111,
+    "security_firm": "FUTUSG",
+    "trd_env": "REAL",
+    "request_delay_seconds": 0.5,
+    "max_requests_per_connection": 8,
+    "auto_sync_interval_minutes": 5,
+    "trade_password_env_var": "MOOMOO_TRADE_PASSWORD"
+  },
+  "yahoo_finance": {
+    "enabled": true,
+    "use_for_stock_prices": true,
+    "use_for_vix": true
+  },
+  "currency": {
+    "base": "USD",
+    "display": "SGD",
+    "exchange_rate": 1.35
+  }
+}

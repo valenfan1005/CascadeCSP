@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Secrets
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite3
+
+# Cache files
+server/.cascading_cache.json
+server/.vix_regime_cache.json
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+/tmp/backend.log
+*.log

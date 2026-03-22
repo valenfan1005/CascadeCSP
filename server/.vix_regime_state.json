@@ -1,0 +1,10 @@
+{
+  "last_regime": "FLAT",
+  "last_primary_ratio": 0.9763033317062113,
+  "last_leading_ratio": 1.006348023597278,
+  "last_sma5": 0.9451737206916144,
+  "last_alert_level": "WARNING",
+  "backwardation_peak_ratio": null,
+  "backwardation_peak_date": null,
+  "cycle_state": "NORMAL"
+}

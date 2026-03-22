@@ -1,0 +1,10 @@
+{
+  "Technology": ["NVDA", "META", "AAPL", "MSFT", "GOOGL", "AMD", "AVGO", "CRM"],
+  "Financials": ["JPM", "GS", "V", "MA"],
+  "Healthcare": ["UNH", "LLY", "ABBV", "AMGN"],
+  "Energy": ["XOM", "CVX", "COP"],
+  "Industrials": ["CAT", "DE", "GE", "LMT"],
+  "Consumer": ["COST", "WMT", "HD", "AMZN"],
+  "Communication": ["NFLX", "DIS"],
+  "ETF": ["SPY", "QQQ", "IWM"]
+}
