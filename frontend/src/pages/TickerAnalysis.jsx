@@ -799,7 +799,35 @@ export default function TickerAnalysis() {
               <h3 className="text-gray-900 font-semibold flex items-center gap-2">
                 🛡️ AI 30天安全评估
               </h3>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => {
+                    setOptionsLoading(true);
+                    setOptionsData(null);
+                    getStockOptions(ticker)
+                      .then(r => setOptionsData(r))
+                      .catch(e => setOptionsData({ error: e.message }))
+                      .finally(() => setOptionsLoading(false));
+                  }}
+                  disabled={optionsLoading}
+                  className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-lg text-sm font-medium border border-indigo-200 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                >
+                  {optionsLoading ? '获取期权数据中...' : optionsData ? '🔄 刷新期权分析' : '📊 期权分析 (Moomoo)'}
+                </button>
+                <button
+                  onClick={() => {
+                    setToxicityLoading(true);
+                    setToxicityData(null);
+                    getFlowToxicity(ticker, 0, '')
+                      .then(r => setToxicityData(r))
+                      .catch(e => setToxicityData({ error: e.message }))
+                      .finally(() => setToxicityLoading(false));
+                  }}
+                  disabled={toxicityLoading}
+                  className="bg-gray-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {toxicityLoading ? '🔬 检测中...' : toxicityData ? '🔬 重新检测' : '🔬 Flow Toxicity'}
+                </button>
                 <button
                   onClick={() => {
                     setSafetyLoading(true);
@@ -830,6 +858,138 @@ export default function TickerAnalysis() {
                 </button>
               </div>
             </div>
+
+            {/* ─── Flow Toxicity Results ─── */}
+            {toxicityLoading && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400" />
+                分析期权链流动性和信息流...
+              </div>
+            )}
+
+            {toxicityData && !toxicityData.error && (() => {
+              const t = toxicityData;
+              const labelColor = { CLEAN: 'bg-emerald-100 text-emerald-700 border-emerald-300', CAUTION: 'bg-yellow-100 text-yellow-700 border-yellow-300', TOXIC: 'bg-red-100 text-red-700 border-red-300', HIGHLY_TOXIC: 'bg-red-200 text-red-800 border-red-400' }[t.label] || 'bg-gray-100 text-gray-700';
+              const barColor = { CLEAN: 'bg-emerald-500', CAUTION: 'bg-yellow-500', TOXIC: 'bg-red-500', HIGHLY_TOXIC: 'bg-red-700' }[t.label] || 'bg-gray-500';
+              const confColor = { HIGH: 'text-red-600', MEDIUM: 'text-yellow-600', LOW: 'text-gray-500' }[t.confidence] || 'text-gray-500';
+              return (
+                <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-700">🔬 Flow Toxicity</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${labelColor}`}>{t.label}</span>
+                      <span className={`text-[10px] font-semibold ${confColor}`}>Conf: {t.confidence}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-400">Strike ${t.strike} | {t.regime}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 w-16">Composite</span>
+                    <div className="flex-1 bg-gray-200 rounded-full h-2.5">
+                      <div className={`h-2.5 rounded-full ${barColor} transition-all`} style={{width: `${Math.min(t.composite * 100, 100)}%`}} />
+                    </div>
+                    <span className="text-xs font-bold text-gray-700 w-10 text-right">{(t.composite * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-white rounded p-2 border border-gray-100">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-gray-400 font-semibold">IV 局部扭曲</span>
+                        <span className={`text-[10px] font-bold ${t.ivld >= 0.4 ? 'text-red-600' : t.ivld >= 0.15 ? 'text-yellow-600' : 'text-emerald-600'}`}>{t.ivld_label}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                          <div className={`h-1.5 rounded-full ${t.ivld >= 0.4 ? 'bg-red-400' : t.ivld >= 0.15 ? 'bg-yellow-400' : 'bg-emerald-400'}`} style={{width: `${Math.min(t.ivld * 100, 100)}%`}} />
+                        </div>
+                        <span className="text-[10px] font-mono text-gray-600">{t.ivld.toFixed(2)}</span>
+                      </div>
+                      {t.details && <p className="text-[9px] text-gray-400 mt-1">IV {t.details.iv_excess_pp > 0 ? '+' : ''}{t.details.iv_excess_pp}pp vs 邻近均值</p>}
+                    </div>
+                    <div className="bg-white rounded p-2 border border-gray-100">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-gray-400 font-semibold">Put/Call 集中度</span>
+                        <span className={`text-[10px] font-bold ${t.pccr >= 0.5 ? 'text-red-600' : t.pccr >= 0.2 ? 'text-yellow-600' : 'text-emerald-600'}`}>{t.pccr_label}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                          <div className={`h-1.5 rounded-full ${t.pccr >= 0.5 ? 'bg-red-400' : t.pccr >= 0.2 ? 'bg-yellow-400' : 'bg-emerald-400'}`} style={{width: `${Math.min(t.pccr * 100, 100)}%`}} />
+                        </div>
+                        <span className="text-[10px] font-mono text-gray-600">{t.pccr.toFixed(2)}</span>
+                      </div>
+                      {t.details && <p className="text-[9px] text-gray-400 mt-1">P/C {t.details.zone_pcr}x vs 市场{t.details.market_pcr}x</p>}
+                    </div>
+                  </div>
+                  {t.label !== 'CLEAN' && (
+                    <div className={`text-xs rounded p-2 ${t.label === 'CAUTION' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                      {t.label === 'CAUTION' && `⚠️ 建议减少仓位至 ${((t.position_multiplier || 0.5) * 100).toFixed(0)}%，premium可能含部分信息流`}
+                      {t.label === 'TOXIC' && '🚫 建议跳过该行权价，多个信号指向信息流。寻找其他行权价或标的'}
+                      {t.label === 'HIGHLY_TOXIC' && '🚫 强烈建议不要在该行权价卖出premium，高确信度信息流检测'}
+                    </div>
+                  )}
+                  {t.label === 'CLEAN' && (
+                    <p className="text-xs text-emerald-600">✅ 该行权价premium看起来是genuine fear premium，可正常卖出</p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {toxicityData?.error && (
+              <p className="text-xs text-red-500 mt-2">Flow Toxicity 检测失败: {toxicityData.error}</p>
+            )}
+
+            {/* ─── Options Analysis Results (Moomoo) ─── */}
+            {optionsLoading && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-indigo-400" />
+                正在从 Moomoo 获取实时期权链...
+              </div>
+            )}
+
+            {optionsData && !optionsData.error && optionsData.ai_analysis && !optionsData.ai_analysis.error && (() => {
+              const oai = optionsData.ai_analysis;
+              const recColor = { 'STRONG_SELL': 'bg-emerald-500', 'SELL': 'bg-blue-500', 'HOLD': 'bg-yellow-500', 'AVOID': 'bg-red-500' }[oai.recommendation] || 'bg-gray-500';
+              return (
+                <div className="mt-3 bg-indigo-50/50 rounded-lg border border-indigo-200/50 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-indigo-400 font-semibold">📊 期权AI分析</span>
+                    <span className="text-[10px] text-gray-400">{optionsData.expiry} DTE={optionsData.dte} {optionsData.atm_iv ? `ATM IV=${(optionsData.atm_iv*100).toFixed(1)}%` : ''}</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className={`${recColor} text-white text-xs font-bold px-2 py-0.5 rounded-full`}>{oai.recommendation}</span>
+                    <p className="text-sm text-gray-700">{oai.summary}</p>
+                  </div>
+                  {oai.best_strike && (
+                    <div className="bg-white rounded-lg p-3 border border-indigo-100 grid grid-cols-3 gap-3 text-xs">
+                      <div><span className="text-gray-400 text-[10px]">推荐行权价</span><p className="font-bold text-indigo-700">${oai.best_strike}</p></div>
+                      <div><span className="text-gray-400 text-[10px]">预期收入/手</span><p className="font-bold text-emerald-600">${oai.expected_income || (oai.best_premium * 100)?.toFixed(0)}</p></div>
+                      <div><span className="text-gray-400 text-[10px]">IV评估</span><p className="font-bold text-gray-700 text-[10px]">{oai.iv_assessment}</p></div>
+                    </div>
+                  )}
+                  {oai.action_plan && <p className="text-xs text-gray-700">📋 {oai.action_plan}</p>}
+                  {oai.exit_strategy && <p className="text-xs text-gray-500">🎯 {oai.exit_strategy}</p>}
+                  {oai.max_risk && <p className="text-xs text-red-500">⚠️ {oai.max_risk}</p>}
+                  {(optionsData.candidates || []).length > 0 && (
+                    <details>
+                      <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">查看全部期权链 ({optionsData.candidates.length}个候选)</summary>
+                      <div className="mt-1 space-y-1">
+                        {optionsData.candidates.map((c, ci) => (
+                          <div key={ci} className="grid grid-cols-6 gap-1 text-[10px]">
+                            <span className="font-bold">${c.strike}</span>
+                            <span>Bid ${c.bid?.toFixed(2)}</span>
+                            <span>Ask ${c.ask?.toFixed(2)}</span>
+                            <span>Δ {c.delta?.toFixed(3)}</span>
+                            <span>IV {(c.iv * 100)?.toFixed(0)}%</span>
+                            <span className="text-emerald-600 font-bold">{(c.annualized_return * 100)?.toFixed(1)}%年化</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              );
+            })()}
+
+            {optionsData?.error && (
+              <p className="text-xs text-red-500 mt-2">期权数据获取失败: {optionsData.error}</p>
+            )}
 
             {safetyLoading && (
               <div className="flex items-center justify-center h-32">
@@ -944,175 +1104,6 @@ export default function TickerAnalysis() {
                     )}
                   </div>
 
-                  {/* Option Analysis Button */}
-                  <div className="border-t border-gray-100 pt-3">
-                    <button
-                      onClick={() => {
-                        setOptionsLoading(true);
-                        setOptionsData(null);
-                        getStockOptions(ticker)
-                          .then(r => setOptionsData(r))
-                          .catch(e => setOptionsData({ error: e.message }))
-                          .finally(() => setOptionsLoading(false));
-                      }}
-                      disabled={optionsLoading}
-                      className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-lg text-sm font-medium border border-indigo-200 hover:bg-indigo-100 transition-colors disabled:opacity-50 w-full"
-                    >
-                      {optionsLoading ? '获取期权数据中...' : optionsData ? '🔄 刷新期权分析' : '📊 查看期权分析 (Moomoo)'}
-                    </button>
-
-                    {/* Option AI Analysis Results */}
-                    {optionsData && !optionsData.error && optionsData.ai_analysis && !optionsData.ai_analysis.error && (() => {
-                      const oai = optionsData.ai_analysis;
-                      const recColor = { 'STRONG_SELL': 'bg-emerald-500', 'SELL': 'bg-blue-500', 'HOLD': 'bg-yellow-500', 'AVOID': 'bg-red-500' }[oai.recommendation] || 'bg-gray-500';
-                      return (
-                        <div className="mt-3 bg-indigo-50/50 rounded-lg border border-indigo-200/50 p-4 space-y-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-indigo-400 font-semibold">📊 期权AI分析</span>
-                            <span className="text-[10px] text-gray-400">{optionsData.expiry} DTE={optionsData.dte} {optionsData.atm_iv ? `ATM IV=${(optionsData.atm_iv*100).toFixed(1)}%` : ''}</span>
-                          </div>
-                          <div className="flex items-start gap-2">
-                            <span className={`${recColor} text-white text-xs font-bold px-2 py-0.5 rounded-full`}>{oai.recommendation}</span>
-                            <p className="text-sm text-gray-700">{oai.summary}</p>
-                          </div>
-                          {oai.best_strike && (
-                            <div className="bg-white rounded-lg p-3 border border-indigo-100 grid grid-cols-3 gap-3 text-xs">
-                              <div><span className="text-gray-400 text-[10px]">推荐行权价</span><p className="font-bold text-indigo-700">${oai.best_strike}</p></div>
-                              <div><span className="text-gray-400 text-[10px]">预期收入/手</span><p className="font-bold text-emerald-600">${oai.expected_income || (oai.best_premium * 100)?.toFixed(0)}</p></div>
-                              <div><span className="text-gray-400 text-[10px]">IV评估</span><p className="font-bold text-gray-700 text-[10px]">{oai.iv_assessment}</p></div>
-                            </div>
-                          )}
-                          {oai.action_plan && <p className="text-xs text-gray-700">📋 {oai.action_plan}</p>}
-                          {oai.exit_strategy && <p className="text-xs text-gray-500">🎯 {oai.exit_strategy}</p>}
-                          {oai.max_risk && <p className="text-xs text-red-500">⚠️ {oai.max_risk}</p>}
-
-                          {(optionsData.candidates || []).length > 0 && (
-                            <details>
-                              <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">查看全部期权链 ({optionsData.candidates.length}个候选)</summary>
-                              <div className="mt-1 space-y-1">
-                                {optionsData.candidates.map((c, ci) => (
-                                  <div key={ci} className="grid grid-cols-6 gap-1 text-[10px]">
-                                    <span className="font-bold">${c.strike}</span>
-                                    <span>Bid ${c.bid?.toFixed(2)}</span>
-                                    <span>Ask ${c.ask?.toFixed(2)}</span>
-                                    <span>Δ {c.delta?.toFixed(3)}</span>
-                                    <span>IV {(c.iv * 100)?.toFixed(0)}%</span>
-                                    <span className="text-emerald-600 font-bold">{(c.annualized_return * 100)?.toFixed(1)}%年化</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </details>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {optionsData?.error && (
-                      <p className="text-xs text-red-500 mt-2">期权数据获取失败: {optionsData.error}</p>
-                    )}
-
-                    {/* ─── Flow Toxicity ─── */}
-                    {optionsData && !optionsData.error && optionsData.ai_analysis?.best_strike && (
-                      <div className="mt-3">
-                        <button
-                          onClick={() => {
-                            setToxicityLoading(true);
-                            setToxicityData(null);
-                            getFlowToxicity(ticker, optionsData.ai_analysis.best_strike, optionsData.expiry)
-                              .then(r => setToxicityData(r))
-                              .catch(e => setToxicityData({ error: e.message }))
-                              .finally(() => setToxicityLoading(false));
-                          }}
-                          disabled={toxicityLoading}
-                          className="bg-gray-50 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-100 transition-colors disabled:opacity-50 w-full"
-                        >
-                          {toxicityLoading ? '🔬 检测中...' : toxicityData ? '🔬 重新检测 Flow Toxicity' : `🔬 检测 $${optionsData.ai_analysis.best_strike} Put 的 Flow Toxicity`}
-                        </button>
-                      </div>
-                    )}
-
-                    {toxicityLoading && (
-                      <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
-                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400" />
-                        分析期权链流动性和信息流...
-                      </div>
-                    )}
-
-                    {toxicityData && !toxicityData.error && (() => {
-                      const t = toxicityData;
-                      const labelColor = { CLEAN: 'bg-emerald-100 text-emerald-700 border-emerald-300', CAUTION: 'bg-yellow-100 text-yellow-700 border-yellow-300', TOXIC: 'bg-red-100 text-red-700 border-red-300', HIGHLY_TOXIC: 'bg-red-200 text-red-800 border-red-400' }[t.label] || 'bg-gray-100 text-gray-700';
-                      const barColor = { CLEAN: 'bg-emerald-500', CAUTION: 'bg-yellow-500', TOXIC: 'bg-red-500', HIGHLY_TOXIC: 'bg-red-700' }[t.label] || 'bg-gray-500';
-                      const confColor = { HIGH: 'text-red-600', MEDIUM: 'text-yellow-600', LOW: 'text-gray-500' }[t.confidence] || 'text-gray-500';
-                      return (
-                        <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
-                          {/* Header */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold text-gray-700">🔬 Flow Toxicity</span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${labelColor}`}>{t.label}</span>
-                              <span className={`text-[10px] font-semibold ${confColor}`}>Conf: {t.confidence}</span>
-                            </div>
-                            <span className="text-[10px] text-gray-400">Strike ${t.strike} | {t.regime}</span>
-                          </div>
-
-                          {/* Composite bar */}
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 w-16">Composite</span>
-                            <div className="flex-1 bg-gray-200 rounded-full h-2.5">
-                              <div className={`h-2.5 rounded-full ${barColor} transition-all`} style={{width: `${Math.min(t.composite * 100, 100)}%`}} />
-                            </div>
-                            <span className="text-xs font-bold text-gray-700 w-10 text-right">{(t.composite * 100).toFixed(0)}%</span>
-                          </div>
-
-                          {/* Two signal cards */}
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-white rounded p-2 border border-gray-100">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-[10px] text-gray-400 font-semibold">IV 局部扭曲</span>
-                                <span className={`text-[10px] font-bold ${t.ivld >= 0.4 ? 'text-red-600' : t.ivld >= 0.15 ? 'text-yellow-600' : 'text-emerald-600'}`}>{t.ivld_label}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                                  <div className={`h-1.5 rounded-full ${t.ivld >= 0.4 ? 'bg-red-400' : t.ivld >= 0.15 ? 'bg-yellow-400' : 'bg-emerald-400'}`} style={{width: `${Math.min(t.ivld * 100, 100)}%`}} />
-                                </div>
-                                <span className="text-[10px] font-mono text-gray-600">{t.ivld.toFixed(2)}</span>
-                              </div>
-                              {t.details && <p className="text-[9px] text-gray-400 mt-1">IV {t.details.iv_excess_pp > 0 ? '+' : ''}{t.details.iv_excess_pp}pp vs 邻近均值</p>}
-                            </div>
-                            <div className="bg-white rounded p-2 border border-gray-100">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-[10px] text-gray-400 font-semibold">Put/Call 集中度</span>
-                                <span className={`text-[10px] font-bold ${t.pccr >= 0.5 ? 'text-red-600' : t.pccr >= 0.2 ? 'text-yellow-600' : 'text-emerald-600'}`}>{t.pccr_label}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                                  <div className={`h-1.5 rounded-full ${t.pccr >= 0.5 ? 'bg-red-400' : t.pccr >= 0.2 ? 'bg-yellow-400' : 'bg-emerald-400'}`} style={{width: `${Math.min(t.pccr * 100, 100)}%`}} />
-                                </div>
-                                <span className="text-[10px] font-mono text-gray-600">{t.pccr.toFixed(2)}</span>
-                              </div>
-                              {t.details && <p className="text-[9px] text-gray-400 mt-1">P/C {t.details.zone_pcr}x vs 市场{t.details.market_pcr}x</p>}
-                            </div>
-                          </div>
-
-                          {/* Action guidance */}
-                          {t.label !== 'CLEAN' && (
-                            <div className={`text-xs rounded p-2 ${t.label === 'CAUTION' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                              {t.label === 'CAUTION' && `⚠️ 建议减少仓位至 ${((t.position_multiplier || 0.5) * 100).toFixed(0)}%，premium可能含部分信息流`}
-                              {t.label === 'TOXIC' && '🚫 建议跳过该行权价，多个信号指向信息流。寻找其他行权价或标的'}
-                              {t.label === 'HIGHLY_TOXIC' && '🚫 强烈建议不要在该行权价卖出premium，高确信度信息流检测'}
-                            </div>
-                          )}
-                          {t.label === 'CLEAN' && (
-                            <p className="text-xs text-emerald-600">✅ 该行权价premium看起来是genuine fear premium，可正常卖出</p>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {toxicityData?.error && (
-                      <p className="text-xs text-red-500 mt-2">Flow Toxicity 检测失败: {toxicityData.error}</p>
-                    )}
-                  </div>
                 </div>
               );
             })()}

@@ -103,6 +103,52 @@ def calculate_trend_ribbon(
         ribbon_ma10 = abs_ribbon.rolling(10).mean()
         vol_ma10 = volume.rolling(10).mean()
 
+        # ── TD Sequential (神奇九转) ──
+        # Setup: count consecutive closes > close[4 bars ago] (buy setup)
+        #        or consecutive closes < close[4 bars ago] (sell setup)
+        # A completed 9-count is a potential reversal signal.
+        td_setup = pd.Series(0, index=df.index, dtype=int)   # 1-9 buy, -1 to -9 sell
+        td_perfected = pd.Series(False, index=df.index)       # perfected setup flag
+        td_completed = False  # track if 9 was just completed (reset on next bar)
+
+        for i in range(4, len(df)):
+            if td_completed:
+                # After a completed 9-count, reset and start fresh
+                td_completed = False
+
+            if close.iloc[i] < close.iloc[i - 4]:
+                # Buy setup count (bearish closes → potential buy)
+                prev = td_setup.iloc[i - 1]
+                if abs(prev) == 9:
+                    td_setup.iloc[i] = 1  # reset after completed 9
+                else:
+                    td_setup.iloc[i] = (prev + 1) if prev > 0 else 1
+            elif close.iloc[i] > close.iloc[i - 4]:
+                # Sell setup count (bullish closes → potential sell)
+                prev = td_setup.iloc[i - 1]
+                if abs(prev) == 9:
+                    td_setup.iloc[i] = -1  # reset after completed 9
+                else:
+                    td_setup.iloc[i] = (prev - 1) if prev < 0 else -1
+            else:
+                td_setup.iloc[i] = 0  # reset on equal
+
+            # Complete at 9 — mark perfection and flag for reset
+            if td_setup.iloc[i] == 9:
+                # Perfection check: bar 8 or 9 low <= bar 6 or 7 low
+                if i >= 3:
+                    low_89 = min(low.iloc[i], low.iloc[i - 1])
+                    low_67 = min(low.iloc[i - 2], low.iloc[i - 3])
+                    td_perfected.iloc[i] = low_89 <= low_67
+                td_completed = True
+            elif td_setup.iloc[i] == -9:
+                # Perfection check: bar 8 or 9 high >= bar 6 or 7 high
+                if i >= 3:
+                    high_89 = max(high.iloc[i], high.iloc[i - 1])
+                    high_67 = max(high.iloc[i - 2], high.iloc[i - 3])
+                    td_perfected.iloc[i] = high_89 >= high_67
+                td_completed = True
+
         # Candle color logic:
         # yellow = overbought (RSI > 70 OR close > BB upper)
         # blue = oversold (RSI < 30 OR close < BB lower)
@@ -183,6 +229,13 @@ def calculate_trend_ribbon(
             # Add crossover marker
             if crossover_type.iloc[i]:
                 row["crossover"] = str(crossover_type.iloc[i])
+
+            # Add TD Sequential (only counts >= 7 shown as numbers, 9 = signal)
+            td_val = int(td_setup.iloc[i])
+            if abs(td_val) >= 7:
+                row["td_count"] = td_val
+                if abs(td_val) == 9:
+                    row["td_perfected"] = bool(td_perfected.iloc[i])
 
             result_data.append(row)
 

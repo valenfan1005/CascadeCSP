@@ -37,18 +37,48 @@ _CACHE_TTL = 300  # 5 minutes during market hours
 # 1. Regime Classification
 # ============================================================
 
-def get_regime(primary_ratio: float) -> str:
-    """Classify regime from VIX/VIX3M ratio."""
+_HYSTERESIS = 0.015  # half-width of dead zone at regime boundaries
+
+def get_regime(primary_ratio: float, prev_regime: str = None) -> str:
+    """Classify regime from VIX/VIX3M ratio with optional hysteresis.
+
+    When prev_regime is supplied, the classifier requires the ratio to
+    overshoot a boundary by _HYSTERESIS before switching regimes.
+    This prevents noisy regime flipping when the ratio oscillates
+    near 0.95 or 1.05.
+    """
+    # Raw classification
     if primary_ratio < 0.85:
-        return "DEEP_CONTANGO"
+        raw = "DEEP_CONTANGO"
     elif primary_ratio < 0.95:
-        return "CONTANGO"
+        raw = "CONTANGO"
     elif primary_ratio <= 1.05:
-        return "FLAT"
+        raw = "FLAT"
     elif primary_ratio <= 1.15:
-        return "BACKWARDATION"
+        raw = "BACKWARDATION"
     else:
-        return "DEEP_BACKWARDATION"
+        raw = "DEEP_BACKWARDATION"
+
+    if prev_regime is None:
+        return raw
+
+    # Hysteresis at 0.95 boundary (CONTANGO ↔ FLAT)
+    if prev_regime == "CONTANGO" and raw == "FLAT":
+        if primary_ratio < 0.95 + _HYSTERESIS:
+            return "CONTANGO"
+    elif prev_regime == "FLAT" and raw == "CONTANGO":
+        if primary_ratio > 0.95 - _HYSTERESIS:
+            return "FLAT"
+
+    # Hysteresis at 1.05 boundary (FLAT ↔ BACKWARDATION)
+    if prev_regime == "FLAT" and raw == "BACKWARDATION":
+        if primary_ratio < 1.05 + _HYSTERESIS:
+            return "FLAT"
+    elif prev_regime == "BACKWARDATION" and raw == "FLAT":
+        if primary_ratio > 1.05 - _HYSTERESIS:
+            return "BACKWARDATION"
+
+    return raw
 
 
 def get_leading_regime(leading_ratio: float) -> str:
@@ -89,12 +119,24 @@ TRANSITION_MAP = {
 }
 
 
+_MIN_BACKWARDATION_DAYS = 3  # minimum days in backwardation before golden window
+
 def detect_transition(prev_regime: str, curr_regime: str, sma_direction: str,
-                      leading_ratio: float, daily_delta: float) -> dict:
-    """Detect regime transition and return state + confidence."""
+                      leading_ratio: float, daily_delta: float,
+                      backwardation_days: int = 999) -> dict:
+    """Detect regime transition and return state + confidence.
+
+    backwardation_days: consecutive days spent in BACKWARDATION/DEEP_BACKWARDATION
+    before the current bar. Golden window requires >= _MIN_BACKWARDATION_DAYS to
+    filter out single-day event spikes (FOMC, flash crashes).
+    """
 
     key = (prev_regime, curr_regime, sma_direction)
     transition = TRANSITION_MAP.get(key)
+
+    # Golden window requires sustained backwardation
+    if transition == "GOLDEN_WINDOW" and backwardation_days < _MIN_BACKWARDATION_DAYS:
+        transition = "RECOVERY"  # short spike recovery, not a golden window
 
     # Check for same-regime deterioration
     if not transition and curr_regime == prev_regime:
@@ -326,35 +368,58 @@ def fetch_vix_data(days: int = 30) -> Optional[pd.DataFrame]:
         # Daily delta
         df["primary_delta"] = df["primary_ratio"].diff()
 
-        # SMA direction — use 3-day change of SMA for more responsive detection
-        # (1-day diff can lag when SMA is still catching up to a reversal)
+        # SMA direction — weighted approach: recent days matter more
+        # Combine 3-day and 1-day changes with recency weighting
+        # to catch reversals faster while still filtering noise
         sma_diff_3d = df["primary_sma5"].diff(3)
-        # Also check raw ratio's 3-day direction as tiebreaker
+        sma_diff_1d = df["primary_sma5"].diff(1)
         raw_diff_3d = df["primary_ratio"].diff(3)
+        raw_diff_2d = df["primary_ratio"].diff(2)
+        raw_diff_1d = df["primary_ratio"].diff(1)
 
-        def _determine_direction(sma_d, raw_d):
-            # Priority 1: Raw reversal — if raw 3-day change is strong AND contradicts SMA,
-            # the raw is more current and SMA is lagging behind
-            if raw_d > 0.015 and sma_d < 0:
-                return "RISING"  # Raw reversed up but SMA still falling (lagging)
-            if raw_d < -0.015 and sma_d > 0:
-                return "FALLING"  # Raw reversed down but SMA still rising (lagging)
-            # Priority 2: Both agree
-            if sma_d > 0.003 or (sma_d > 0 and raw_d > 0.01):
+        def _determine_direction(sma_3d, sma_1d, raw_3d, raw_2d, raw_1d):
+            # Weighted signal: 50% recent (1-2 day), 50% medium-term (3 day)
+            # This catches reversals 1-2 days faster than pure 3-day diff
+
+            # Recent momentum (last 2 days) — most responsive
+            recent_signal = (raw_1d * 0.6 + raw_2d * 0.4) if not (pd.isna(raw_1d) or pd.isna(raw_2d)) else 0
+
+            # Medium-term momentum (3 day SMA + raw)
+            medium_signal = (sma_3d * 0.5 + raw_3d * 0.5) if not (pd.isna(sma_3d) or pd.isna(raw_3d)) else 0
+
+            # Composite: weight recent 60%, medium 40%
+            composite = recent_signal * 0.6 + medium_signal * 0.4
+
+            # Priority 1: Strong recent reversal overrides medium-term
+            # If last 2 days clearly reversed but 3-day still shows old direction
+            if raw_2d is not None and not pd.isna(raw_2d):
+                if raw_2d < -0.02 and raw_1d < 0 and (sma_3d or 0) > 0:
+                    return "FALLING"  # Clear 2-day reversal down, SMA lagging
+                if raw_2d > 0.02 and raw_1d > 0 and (sma_3d or 0) < 0:
+                    return "RISING"   # Clear 2-day reversal up, SMA lagging
+
+            # Priority 2: Composite signal with adaptive thresholds
+            if composite > 0.005:
                 return "RISING"
-            elif sma_d < -0.003 or (sma_d < 0 and raw_d < -0.01):
+            elif composite < -0.005:
                 return "FALLING"
-            # Priority 3: Raw alone is strong enough
-            elif raw_d > 0.02:
-                return "RISING"
-            elif raw_d < -0.02:
-                return "FALLING"
-            else:
-                return "FLAT"
+
+            # Priority 3: Recent direction tiebreaker for borderline cases
+            if sma_1d is not None and not pd.isna(sma_1d):
+                if sma_1d > 0.002 and raw_1d > 0:
+                    return "RISING"
+                elif sma_1d < -0.002 and raw_1d < 0:
+                    return "FALLING"
+
+            return "FLAT"
 
         df["sma_direction"] = [
-            _determine_direction(s, r) if not (pd.isna(s) or pd.isna(r)) else "FLAT"
-            for s, r in zip(sma_diff_3d, raw_diff_3d)
+            _determine_direction(s3, s1, r3, r2, r1)
+            if not all(pd.isna(x) for x in [s3, r3])
+            else "FLAT"
+            for s3, s1, r3, r2, r1 in zip(
+                sma_diff_3d, sma_diff_1d, raw_diff_3d, raw_diff_2d, raw_diff_1d
+            )
         ]
 
         # Regime classification for each day
@@ -453,32 +518,38 @@ def analyze_vix_regime(force: bool = False) -> dict:
     daily_delta = float(latest["primary_delta"])
     sma_direction = str(latest["sma_direction"])
 
-    # Current regime
-    regime = get_regime(primary_ratio)
-    leading_regime = get_leading_regime(leading_ratio)
-
     # Load previous state for transition detection
     state = _load_state()
     prev_regime = state.get("last_regime", "CONTANGO")
     cycle_state = state.get("cycle_state", "NORMAL")
+    backwardation_days = state.get("backwardation_days", 0)
 
-    # Track backwardation peaks
+    # Current regime (with hysteresis to prevent boundary oscillation)
+    regime = get_regime(primary_ratio, prev_regime)
+    leading_regime = get_leading_regime(leading_ratio)
+
+    # Track backwardation peaks and consecutive days
     if regime in ("BACKWARDATION", "DEEP_BACKWARDATION"):
         cycle_state = "IN_BACKWARDATION"
+        backwardation_days += 1
         peak = state.get("backwardation_peak_ratio") or 0
         if primary_ratio > peak:
             state["backwardation_peak_ratio"] = primary_ratio
             state["backwardation_peak_date"] = datetime.now().isoformat()
     elif cycle_state == "IN_BACKWARDATION" and regime in ("FLAT", "CONTANGO"):
         cycle_state = "POST_BACKWARDATION"
+        # Keep backwardation_days for golden window check, reset after transition
     elif cycle_state == "POST_BACKWARDATION" and primary_ratio < 0.90:
         cycle_state = "NORMAL"
+        backwardation_days = 0
         state["backwardation_peak_ratio"] = None
         state["backwardation_peak_date"] = None
+    elif regime not in ("BACKWARDATION", "DEEP_BACKWARDATION") and cycle_state != "POST_BACKWARDATION":
+        backwardation_days = 0
 
-    # Detect transition
+    # Detect transition (with backwardation duration for golden window filtering)
     transition = detect_transition(prev_regime, regime, sma_direction,
-                                    leading_ratio, daily_delta)
+                                    leading_ratio, daily_delta, backwardation_days)
 
     # Position size multiplier
     size_mult = position_size_multiplier(primary_ratio, sma_direction, leading_ratio)
@@ -534,6 +605,7 @@ def analyze_vix_regime(force: bool = False) -> dict:
         "last_sma5": sma5,
         "last_alert_level": alert["level"],
         "cycle_state": cycle_state,
+        "backwardation_days": backwardation_days,
     })
     _save_state(state)
 

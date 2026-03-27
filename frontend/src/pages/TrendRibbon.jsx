@@ -271,6 +271,34 @@ function TrendRibbonChart({ data, width = 1200, height = 600 }) {
                   🔔
                 </text>
               )}
+              {/* TD Sequential markers (7,8,9) */}
+              {c.td_count && (() => {
+                const isBuy = c.td_count > 0;  // buy setup (bearish count → reversal up)
+                const count = Math.abs(c.td_count);
+                const isNine = count === 9;
+                const yPos = isBuy ? yScale(c.low) + (c.phase ? 30 : 16) : yScale(c.high) - (c.crossover ? 30 : 16);
+                const color = isNine
+                  ? (c.td_perfected ? (isBuy ? '#22c55e' : '#ef4444') : (isBuy ? '#4ade80' : '#f87171'))
+                  : '#94a3b8';
+                return (
+                  <g>
+                    {isNine && (
+                      <circle cx={xCenter(i)} cy={yPos} r="9"
+                        fill={isBuy ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}
+                        stroke={color} strokeWidth="1.5"
+                      />
+                    )}
+                    <text
+                      x={xCenter(i)} y={yPos + (isNine ? 4 : 3)}
+                      fill={color} fontSize={isNine ? "11" : "9"}
+                      textAnchor="middle" fontWeight={isNine ? "bold" : "normal"}
+                      fontFamily="monospace"
+                    >
+                      {count}
+                    </text>
+                  </g>
+                );
+              })()}
             </g>
           );
         })}
@@ -346,6 +374,17 @@ function TrendRibbonChart({ data, width = 1200, height = 600 }) {
                  tooltip.candle.phase === 'declining' ? '📉 落势' : '🔔 底部信号'}
               </div>
             )}
+            {tooltip.candle.td_count && (() => {
+              const isBuy = tooltip.candle.td_count > 0;
+              const count = Math.abs(tooltip.candle.td_count);
+              const isNine = count === 9;
+              return (
+                <div className={`text-center mt-1 font-bold ${isBuy ? 'text-green-400' : 'text-red-400'}`}>
+                  {isNine ? '🔮' : '🔢'} 九转 {count}/{isBuy ? '买入' : '卖出'}
+                  {isNine && (tooltip.candle.td_perfected ? ' ✅完美' : ' ⚠️未完美')}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -786,9 +825,17 @@ export default function TrendRibbon() {
           <div className="flex items-center gap-2">
             🔔 底部信号（RSI超卖+放量）
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-green-400 font-bold text-xs font-mono">9</span>
+            九转买入信号（连续9根收盘&lt;4根前）
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-red-400 font-bold text-xs font-mono">9</span>
+            九转卖出信号（连续9根收盘&gt;4根前）
+          </div>
         </div>
         <p className="text-xs text-gray-400 mt-3">
-          💡 带宽越宽=趋势越强。带宽收窄=趋势减弱，可能即将转换。"变"出现时应谨慎操作。价格在龙门线(白线)下方=大趋势向下。黄色K线=超买警告，蓝色K线=超卖机会。
+          💡 带宽越宽=趋势越强。带宽收窄=趋势减弱，可能即将转换。"变"出现时应谨慎操作。价格在龙门线(白线)下方=大趋势向下。黄色K线=超买警告，蓝色K线=超卖机会。🔮 神奇九转：连续9根K线收盘价低于4根前=买入信号（绿色9），高于4根前=卖出信号（红色9）。完美九转(✅)更可靠。
         </p>
       </div>
     </div>
